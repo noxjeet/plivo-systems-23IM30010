@@ -54,7 +54,7 @@ int main(void) {
         memcpy(out_buf, &net_seq, 4);
 
         uint8_t has_prev = 0;
-        if (seq > 0 && (seq % 10 != 0)) {
+        if (seq > 0 && (seq % 8 != 0)) {
             size_t prev_index = (seq - 1) % 2048;
             if (buffer.present[prev_index]) {
                 has_prev = 1;
