@@ -28,12 +28,15 @@ int main(void) {
     player.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     unsigned char buf[2048];
+    // Per-sequence duplicate suppression: a frame is forwarded to the player
+    // exactly once, whichever copy arrives first (primary or recovered).
     std::vector<bool> sent(1000000, false);
 
     for (;;) {
         struct sockaddr_in src_addr;
         socklen_t addr_len = sizeof(src_addr);
-        ssize_t n = recvfrom(in_fd, buf, sizeof buf, 0, (struct sockaddr *)&src_addr, &addr_len);
+        ssize_t n = recvfrom(in_fd, buf, sizeof buf, 0,
+                             (struct sockaddr *)&src_addr, &addr_len);
         if (n <= 0) continue;
         if (n < 165) continue;
 
@@ -43,28 +46,28 @@ int main(void) {
 
         uint8_t has_prev = buf[4];
 
-        if (seq < sent.size()) {
-            if (!sent[seq]) {
-                unsigned char play_buf[164];
-                uint32_t net_seq = htonl(seq);
-                memcpy(play_buf, &net_seq, 4);
-                memcpy(play_buf + 4, buf + 5, 160);
-                sendto(out_fd, play_buf, 164, 0, (struct sockaddr *)&player, sizeof player);
-                sent[seq] = true;
-            }
+        // Forward primary frame immediately on first arrival
+        if (seq < (uint32_t)sent.size() && !sent[seq]) {
+            unsigned char play_buf[164];
+            uint32_t net_seq = htonl(seq);
+            memcpy(play_buf,     &net_seq, 4);
+            memcpy(play_buf + 4, buf + 5,  160);
+            sendto(out_fd, play_buf, 164, 0,
+                   (struct sockaddr *)&player, sizeof player);
+            sent[seq] = true;
         }
 
+        // Forward recovered (previous) frame immediately on first arrival
         if (has_prev == 1 && seq > 0 && n >= 325) {
             uint32_t prev_seq = seq - 1;
-            if (prev_seq < sent.size()) {
-                if (!sent[prev_seq]) {
-                    unsigned char play_buf[164];
-                    uint32_t net_seq = htonl(prev_seq);
-                    memcpy(play_buf, &net_seq, 4);
-                    memcpy(play_buf + 4, buf + 165, 160);
-                    sendto(out_fd, play_buf, 164, 0, (struct sockaddr *)&player, sizeof player);
-                    sent[prev_seq] = true;
-                }
+            if (prev_seq < (uint32_t)sent.size() && !sent[prev_seq]) {
+                unsigned char play_buf[164];
+                uint32_t net_seq = htonl(prev_seq);
+                memcpy(play_buf,     &net_seq,    4);
+                memcpy(play_buf + 4, buf + 165,   160);
+                sendto(out_fd, play_buf, 164, 0,
+                       (struct sockaddr *)&player, sizeof player);
+                sent[prev_seq] = true;
             }
         }
     }
